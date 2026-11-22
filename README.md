@@ -14,11 +14,15 @@ indicators of compromise (IOCs), removes the confirmed threats, scans again to c
 3. Add-ons > **Install from zip file** > pick the zip.
 
 ## Run
-1. On the box: Settings > Device Preferences > About, click **Build** 7 times to unlock Developer options.
-2. In Developer options, turn on **USB debugging** and **ADB over network / Network debugging** (port 5555).
-   No network option? Run `adb tcpip 5555` once from a PC over USB.
-3. Open Add-ons > Program add-ons > **Botnet Remover** and press **Allow** on the "Allow USB debugging?" prompt.
-4. When it's done, let it turn ADB off again. Open ADB is how botnets like Kimwolf get in.
+Open Add-ons > Program add-ons > **Botnet Remover**. Android only lets *you* turn debugging on, not an
+app, so if it's off the add-on shows three steps and opens the right Settings screen for each one:
+1. **Unlock developer mode**: click **Build** 7 times, then press Back.
+2. **Turn on debugging**: turn on **USB debugging** and **Network debugging** / **ADB over network**, then
+   press Back. No network option? Run `adb tcpip 5555` once from a PC over USB.
+3. **Scan now**: if the box asks "Allow USB debugging?", tick **Always allow** and press OK.
+
+Many boxes ship with debugging already on, and on those the scan starts right away. When it's done, let it
+turn ADB off again. Open ADB is how botnets like Kimwolf get in.
 
 You can also scan another box on your network: if the local connection fails, enter that box's IP.
 

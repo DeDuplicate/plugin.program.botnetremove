@@ -15,14 +15,18 @@ from xcpe_remover import AFTER_HELP, scan
 NAME = 'Botnet Remover'
 COLORS = {'HIGH': 'red', 'MEDIUM': 'orange', 'LOW': 'yellow', 'INFO': 'grey'}
 ACTIVE = ('Malicious package', 'Live connection', 'Malicious process')  # anything else left is inert residue
-ENABLE_HELP = """[B]Turn on ADB so the add-on can clean this box:[/B]
-1. Settings > Device Preferences > About: click "Build" 7 times (older boxes: Settings > About > Build number).
-2. Developer options: turn on "USB debugging" and "ADB over network" / "Network debugging" (port 5555).
-   No network option? Run once from a PC over USB:  adb tcpip 5555
-   ("Wireless debugging" with pairing codes is not supported.)
-3. Run the add-on again and press "Allow" on the "Allow USB debugging?" prompt.
-
-To clean another box on your network, enter its IP address on the next screen."""
+# Android lets only the user turn debugging on (an app that could would be malware's dream), so we walk them
+# through it, opening each Settings page straight from Kodi: (label, how-to, settings intent).
+STEPS = [
+    ('1. Unlock developer mode',
+     'Click "Build" 7 times until it says "You are now a developer". Then press Back.',
+     'android.settings.DEVICE_INFO_SETTINGS'),
+    ('2. Turn on debugging',
+     'Turn on "USB debugging" and "Network debugging" (or "ADB over network"). Then press Back.',
+     'android.settings.APPLICATION_DEVELOPMENT_SETTINGS'),
+]
+RETRY = ('3. Scan now', 'If the box asks "Allow USB debugging?": tick "Always allow" and press OK.')
+OTHER = ('Clean another box on my network', 'Enter the IP address of a box that has network debugging on.')
 dlg = xbmcgui.Dialog()
 
 
@@ -41,6 +45,9 @@ def log(title, findings):
 
 def connect(pd):
     addr = '127.0.0.1:5555'
+    android = xbmc.getCondVisibility('System.Platform.Android')
+    steps = STEPS if android else []  # off-box (e.g. Windows Kodi) the only option is another box's IP
+    menu = [xbmcgui.ListItem(label, how) for label, how, *_ in steps + [RETRY] + ([] if android else [OTHER])]
     while True:
         pd.create(NAME, f'Connecting to ADB at {addr}...')
         try:
@@ -49,10 +56,19 @@ def connect(pd):
                        lambda: pd.update(0, 'Press [B]Allow[/B] on the "Allow USB debugging?" prompt'))
         except (OSError, ValueError) as e:
             pd.close()
-            dlg.textviewer(NAME, f'Could not connect to ADB at {addr}: {e}\n\n{ENABLE_HELP}')
-            addr = dlg.input('ADB address of the box (this box: 127.0.0.1:5555)', addr)
-            if not addr:
-                return None
+            xbmc.log(f'[{NAME}] ADB at {addr} unreachable: {e}', xbmc.LOGINFO)
+            while True:  # guide menu: steps open Settings and come back here; Scan now / another box retry
+                i = dlg.select('Turn on debugging so Botnet Remover can scan this box', menu, useDetails=True)
+                if i < 0:
+                    return None
+                if i < len(steps):
+                    # FLAG_ACTIVITY_NEW_TASK, like `am start`: without it About opened and closed at once (MuMu)
+                    xbmc.executebuiltin(f'StartAndroidActivity("",{steps[i][2]},"","",268435456)')
+                    xbmc.sleep(2000)  # let Settings take the screen before the menu reopens behind it
+                    continue
+                if i == len(steps) + 1:
+                    addr = dlg.input('IP address of the box', addr) or addr
+                break
 
 
 def main():
