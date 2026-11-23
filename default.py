@@ -1,4 +1,4 @@
-"""Botnet Remover: finds the XCPE botnet on this Android TV box and removes it, antivirus-style.
+"""Botnet Remover: finds TV-box botnets (XCPE, BADBOX, Vo1d, Kimwolf...) on this Android box and removes it, antivirus-style.
 
 Shell access comes from the box's own adbd (127.0.0.1:5555) via adb.py; detection and the removal
 commands are xcpe_remover.scan() + iocs.json (copied from the XCPE remover PC tool).
@@ -14,7 +14,7 @@ from xcpe_remover import AFTER_HELP, scan
 
 NAME = 'Botnet Remover'
 COLORS = {'HIGH': 'red', 'MEDIUM': 'orange', 'LOW': 'yellow', 'INFO': 'grey'}
-ACTIVE = ('Malicious package', 'Live connection', 'Malicious process')  # anything else left is inert residue
+ACTIVE = ('Malicious package', 'Live connection', 'Malicious process', 'ADB opened')  # anything else left is inert residue
 # Android lets only the user turn debugging on (an app that could would be malware's dream), so we walk them
 # through it, opening each Settings page straight from Kodi: (label, how-to, settings intent).
 STEPS = [
@@ -91,7 +91,7 @@ def main():
         log('scan', found)
         bad = [f for f in found if f.sev == 'HIGH']
         if bad:  # antivirus mode: remove every IOC-confirmed threat; heuristics (MEDIUM/LOW) are only reported
-            dlg.notification(NAME, f'INFECTED: XCPE botnet found, removing {len(bad)} threat(s)...',
+            dlg.notification(NAME, f'INFECTED: botnet found, removing {len(bad)} threat(s)...',
                              xbmcaddon.Addon().getAddonInfo('icon'), 8000)
             for f in bad:
                 for c in f.fix or ():
@@ -105,17 +105,17 @@ def main():
         left = [f for f in found if f.sev == 'HIGH' and f.title.startswith(ACTIVE)
                 and f.title.split()[-1] not in disabled]  # disable-user fallback = neutralised
         residue = [f for f in found if f.sev == 'HIGH' and f not in left]
-        infected = f'[COLOR red][B]Scan result: INFECTED[/B][/COLOR] - {len(bad)} XCPE threat(s) found.\n'
+        infected = f'[COLOR red][B]Scan result: INFECTED[/B][/COLOR] - {len(bad)} botnet threat(s) found.\n'
         if left:
-            dlg.ok(NAME, infected + '[COLOR red][B]XCPE could not be fully removed:[/B][/COLOR]\n'
+            dlg.ok(NAME, infected + '[COLOR red][B]The botnet could not be fully removed:[/B][/COLOR]\n'
                    + '\n'.join(f.title for f in left))
         elif bad:
-            dlg.ok(NAME, infected + '[COLOR lime][B]Device is cleared from XCPE botnet.[/B][/COLOR]\n'
+            dlg.ok(NAME, infected + '[COLOR lime][B]Device is cleared from the botnet.[/B][/COLOR]\n'
                    + (f'{len(residue)} inactive leftover(s) in the read-only firmware come back after a factory '
                       'reset. ' if residue else '')
                    + 'Reboot and run again to make sure it stays gone.')
         else:
-            dlg.ok(NAME, '[COLOR lime][B]Scan result: CLEAN[/B][/COLOR]\nNo XCPE botnet found on this device.')
+            dlg.ok(NAME, '[COLOR lime][B]Scan result: CLEAN[/B][/COLOR]\nNo botnet found on this device.')
         if found:
             dlg.textviewer(NAME, report(found) + (AFTER_HELP if bad else ''))
 

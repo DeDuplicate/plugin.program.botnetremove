@@ -61,10 +61,11 @@ class Finding:
 
 
 def remove_cmds(pkg):
-    # Full uninstall removes /data/app copies and system-app updates; --user 0 hides the
-    # firmware copy so its BootReceiver can't reinstall it; disable-user is the last resort.
-    return [f'am force-stop {pkg}', f'pm uninstall {pkg}', f'pm uninstall --user 0 {pkg}',
-            f'pm list packages | grep -qx package:{pkg} && pm disable-user --user 0 {pkg}']
+    # Disable first: MECOOL owners report uninstalled XCPE apps regaining "install unknown apps" after a
+    # reboot, disabled ones not. Full uninstall then removes /data/app copies and system-app updates;
+    # --user 0 hides the firmware copy so its BootReceiver can't reinstall it.
+    return [f'am force-stop {pkg}', f'pm disable-user --user 0 {pkg}', f'pm uninstall {pkg}',
+            f'pm uninstall --user 0 {pkg}']
 
 
 def ipv4_from_proc(hexaddr):
@@ -138,7 +139,13 @@ def scan(sh, cache):
         where = ('user-installed' if p in third else
                  'SYSTEM app: the firmware itself is backdoored; it returns after a factory reset')
         add('HIGH', f'Malicious package {p}', f"{'; '.join(why)} [{pkgs[p]}, {where}]", remove_cmds(p))
-    for p in sorted(third - bad.keys()):
+    review = {p: why for p, why in IOC['packages_review'].items() if p in pkgs and p not in bad}
+    for p, why in review.items():  # names that can collide or that the user may want: never auto-removed
+        add('MEDIUM', f'Suspicious package {p}', f'{why} [{pkgs[p]}]', remove_cmds(p))
+    for k, who in IOC['vendor'].items():
+        if k in pkgs or k in prop:
+            add('MEDIUM', f'{who} firmware detected ({k})', 'the botnet vendor made this firmware; treat it as untrusted')
+    for p in sorted(third - bad.keys() - review.keys()):
         if p.startswith('com.android.'):
             add('MEDIUM', f'{p} impersonates a system package', 'user-installed app with a com.android.* name',
                 remove_cmds(p))
@@ -146,7 +153,7 @@ def scan(sh, cache):
             add('MEDIUM', f'{p} looks like proxyware', 'sells your bandwidth / turns the box into a proxy exit node',
                 remove_cmds(p))
     for f in found:
-        add('HIGH', f'XCPE artifact {f}', 'on a read-only partition: needs root or a clean firmware flash to delete')
+        add('HIGH', f'Botnet artifact {f}', 'on a read-only partition: needs root or a clean firmware flash to delete')
     for f in oem_apks:
         if not HASHES.get(cache.get(f)):
             add('INFO', f'APK on /oem partition: {f}', 'XCPE reinstalls itself from /oem at boot; review')
@@ -158,7 +165,7 @@ def scan(sh, cache):
             add('HIGH', f'Malicious process running: {n}', 'stops once its parent package is removed and the box rebooted')
 
     # --- network: live C2 connections, and C2 domains seen in logs
-    hits = set()
+    hits = {}
     for line in sh('cat /proc/net/tcp /proc/net/tcp6 2>/dev/null').splitlines():
         parts = line.split()
         # ESTABLISHED/SYN_SENT only: TIME_WAIT leftovers would flag a just-removed C2 link as live
@@ -166,9 +173,12 @@ def scan(sh, cache):
             addr, port = parts[2].split(':')
             ip, port = ipv4_from_proc(addr), int(port, 16)
             if ip in IOC['ips'] or port in IOC_PORTS:
-                hits.add(f'{ip}:{port}')
-    for h in sorted(hits):
-        add('HIGH', f'Live connection to XCPE C2 {h}')
+                hits[f'{ip}:{port}'] = IOC['ips'].get(ip, 'XCPE')  # bare-port hits are the XCPE MQTT broker
+    for h, fam in sorted(hits.items()):
+        add('HIGH', f'Live connection to {fam} C2 {h}')
+    if 'niggabox' in sh('cat /proc/net/unix 2>/dev/null'):
+        add('HIGH', 'Malicious process running: Kimwolf/Aisuru bot (control socket open)',
+            'stops once its package is removed and the box rebooted')
     for d in sorted({m.lower() for m in DOMAIN_RE.findall(sh('logcat -d 2>/dev/null'))}):
         add('HIGH', f'Device contacted {DOMAINS[d]} infrastructure: {d}', 'seen in the system log')
 
@@ -191,18 +201,33 @@ def scan(sh, cache):
     if proxy not in ('', 'null', ':0'):
         add('MEDIUM', f'Global HTTP proxy set: {proxy}', 'web traffic is routed through a third party',
             ['settings put global http_proxy :0'])
-    vendor = ' '.join(prop.get(k, '') for k in ('ro.product.brand', 'ro.product.manufacturer', 'ro.product.model'))
-    if prop.get('ro.mecool.device') in ('true', '1') or re.search('videostrong|mecool', vendor, re.I):
-        add('MEDIUM', 'Videostrong/Mecool device (the XCPE vendor)', 'treat the firmware as untrusted; consider replacing')
+    # ro.product.name/fingerprint: the KM2 Plus says SkyworthDigital and leaves ro.mecool.device empty
+    vendor = ' '.join(prop.get(k, '') for k in ('ro.product.brand', 'ro.product.manufacturer', 'ro.product.model',
+                                                'ro.product.name', 'ro.build.fingerprint'))
+    build = prop.get('ro.build.fingerprint', '') + ' ' + prop.get('ro.build.display.id', '')
+    clean = next((b for b in IOC['mecool_clean_builds'] if b in build), None)
+    if clean:
+        add('INFO', f"MECOOL's cleaned firmware {clean} (Nov 2026, no XCPE)",
+            'KM2 PLUS Deluxe: Wi-Fi may fail on this build, MECOOL says use Ethernet until they fix it')
+    elif prop.get('ro.mecool.device') in ('true', '1') or re.search('videostrong|mecool', vendor, re.I):
+        add('MEDIUM', 'Videostrong/Mecool device (the XCPE vendor)',
+            'MECOOL has cleaned firmware for ' + ', '.join(sorted(set(IOC['mecool_clean_builds'].values())))
+            + ': Settings > (Device Preferences / System) > About > System Update. It factory-resets the box '
+              '(reinstall Kodi after). Other models: treat the firmware as untrusted; consider replacing')
     elif prop.get('ro.product.model') in IOC['models']:
-        add('MEDIUM', f"Model {prop['ro.product.model']} was observed shipping XCPE firmware",
+        add('MEDIUM', f"Model {prop['ro.product.model']} is on a published list of botnet-infected models",
             'not proof by itself; treat the firmware as untrusted')
+    if 'ota' in prop.get('sys.boot.reason', ''):
+        add('INFO', f"Last restart was a firmware update (sys.boot.reason={prop['sys.boot.reason']})",
+            'boxes can update and restart on their own; a MECOOL update also wipes the box')
     if prop.get('ro.debuggable') == '1' or prop.get('ro.secure') == '0':
         add('MEDIUM', 'Insecure debug firmware (ro.debuggable=1 / ro.secure=0)', 'ADB access grants root')
     if 'test-keys' in prop.get('ro.build.tags', ''):
         add('MEDIUM', 'Firmware signed with public test-keys', 'anyone can sign "system" apps for this device')
     port = prop.get('service.adb.tcp.port') or prop.get('persist.adb.tcp.port')
-    if port and port not in ('0', '-1'):
+    if port == '22337':
+        add('HIGH', 'ADB opened on port 22337, the JackSkid botnet signature', 'botnets use open ADB to spread')
+    elif port and port not in ('0', '-1'):
         add('MEDIUM', f'ADB exposed on network port {port}', 'open ADB is a common botnet entry point; disable when done')
     if sh('ls /system/xbin/su /system/bin/su /sbin/su /su/bin/su 2>/dev/null').strip():
         add('MEDIUM', 'Root (su) binary present', 'any app granted root can take over the device')

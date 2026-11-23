@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="plugin.program.botnetremove" name="Botnet Remover" version="1.0.1" provider-name="DeDuplicate">
+<addon id="plugin.program.botnetremove" name="Botnet Remover" version="1.1.0" provider-name="DeDuplicate">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
@@ -7,8 +7,8 @@
         <provides>executable</provides>
     </extension>
     <extension point="xbmc.addon.metadata">
-        <summary lang="en_GB">Find and remove the XCPE botnet from this Android TV box</summary>
-        <description lang="en_GB">Antivirus-style cleaner for the XCPE / Videostrong (MECOOL) TV-box botnet and the proxyware it loads. Connects to the box's own ADB (turn on USB debugging and ADB over network first), removes confirmed threats automatically and verifies with a re-scan. IOCs: Google Threat Intelligence and Synthient, November 2026.</description>
+        <summary lang="en_GB">Find and remove TV-box botnets (XCPE, BADBOX 3.0, Vo1d, Kimwolf, JackSkid) from this Android box</summary>
+        <description lang="en_GB">Antivirus-style cleaner for the botnets preinstalled on or pushed to cheap Android TV boxes: XCPE (Videostrong / MECOOL), BADBOX 2.0 and 3.0 (TXCZ), Vo1d, Kimwolf/Aisuru, JackSkid, and the proxyware they load. Connects to the box's own ADB (turn on USB debugging and ADB over network first), removes confirmed threats automatically and verifies with a re-scan. Lookalike app names and vendor firmware are only reported. IOCs: Google, Synthient, Plume, TrendAI, HUMAN, Nokia, Dr.Web, XLab, Unit 42, Comcast (to November 2026).</description>
         <platform>all</platform>
         <assets>
             <icon>icon.png</icon>
